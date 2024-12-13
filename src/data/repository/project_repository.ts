@@ -172,4 +172,37 @@ export class ProjectRepository {
         return [];
     };
 
+    getAllMembers = async (
+        organization: string,
+        token: string
+    ): Promise<string[]> => {
+        const octokit = github.getOctokit(token);
+
+        try {
+            const {data: teams} = await octokit.rest.teams.list({
+                org: organization,
+            });
+
+            if (teams.length === 0) {
+                core.info(`${organization} doesn't have any team.`);
+                return [];
+            }
+
+            const membersSet = new Set<string>();
+
+            for (const team of teams) {
+                const {data: members} = await octokit.rest.teams.listMembersInOrg({
+                    org: organization,
+                    team_slug: team.slug,
+                });
+                members.forEach((member) => membersSet.add(member.login));
+            }
+
+            return Array.from(membersSet);
+        } catch (error) {
+            core.error(`Error getting all members: ${error}.`);
+        }
+        return [];
+    };
+
 }

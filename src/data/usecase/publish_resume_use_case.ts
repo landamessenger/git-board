@@ -2,7 +2,6 @@ import {IssueRepository} from "../repository/issue_repository";
 import {ParamUseCase} from "./base/param_usecase";
 import {Execution} from "../model/execution";
 import {Result} from "../model/result";
-import {PullRequestRepository} from "../repository/pull_request_repository";
 import {getRandomElement} from "../utils/list_utils";
 import * as core from '@actions/core';
 
@@ -12,7 +11,6 @@ import * as core from '@actions/core';
 export class PublishResultUseCase implements ParamUseCase<Execution, void> {
     taskId: string = 'PublishResultUseCase';
     private issueRepository = new IssueRepository();
-    private pullRequestRepository = new PullRequestRepository();
 
     async invoke(param: Execution): Promise<void> {
         core.info(`Executing ${this.taskId}.`)
@@ -96,7 +94,7 @@ Thank you for contributing! 🙌
                     param.tokens.token,
                 )
             } else if (param.isPullRequest) {
-                await this.pullRequestRepository.addComment(
+                await this.issueRepository.addComment(
                     param.owner,
                     param.repo,
                     param.pullRequest.number,

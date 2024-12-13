@@ -1,7 +1,7 @@
 name: 🐛 Bug Report
 description: Report a bug on git-board-flow
 title: "<YOUR TITLE HERE>"
-labels: ["bug"]
+labels: ["bug", "bugfix"]
 body:
   - type: checkboxes
     attributes:

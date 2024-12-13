@@ -45,7 +45,7 @@ export class LinkPullRequestIssueUseCase implements ParamUseCase<Execution, Resu
                 /**
                  *  Update PR's description.
                  */
-                let prBody = github.context.payload.pull_request?.body || '';
+                let prBody = param.pullRequest.body;
 
                 let updatedBody = `${prBody}\n\nResolves #${param.number}`;
                 await this.pullRequestRepository.updateDescription(
@@ -97,7 +97,7 @@ export class LinkPullRequestIssueUseCase implements ParamUseCase<Execution, Resu
                 /**
                  * Restore comment on description
                  */
-                prBody = github.context.payload.pull_request?.body ?? "";
+                prBody = param.pullRequest.body;
                 updatedBody = prBody.replace(`\n\nResolves #${param.number}`, "");
                 await this.pullRequestRepository.updateDescription(
                     param.owner,

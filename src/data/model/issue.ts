@@ -13,6 +13,10 @@ export class Issue {
         return github.context.payload.issue?.number ?? -1;
     }
 
+    get creator(): string {
+        return github.context.payload.issue?.user.login ?? '';
+    }
+
     get url(): string {
         return github.context.payload.issue?.html_url ?? '';
     }

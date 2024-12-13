@@ -16,6 +16,10 @@ export class PullRequest {
         return github.context.payload.pull_request?.title ?? '';
     }
 
+    get creator(): string {
+        return github.context.payload.pull_request?.user.login ?? '';
+    }
+
     get number(): number {
         return github.context.payload.pull_request?.number ?? -1;
     }

@@ -30133,13 +30133,13 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.Execution = void 0;
-const pull_request_repository_1 = __nccwpck_require__(634);
 const issue_repository_1 = __nccwpck_require__(57);
 const github = __importStar(__nccwpck_require__(5438));
 const label_utils_1 = __nccwpck_require__(6093);
 const title_utils_1 = __nccwpck_require__(6212);
 const config_1 = __nccwpck_require__(1106);
 const commit_1 = __nccwpck_require__(3993);
+const description_utils_1 = __nccwpck_require__(5574);
 class Execution {
     get eventName() {
         return github.context.eventName;
@@ -30194,19 +30194,20 @@ class Execution {
                 const issueRepository = new issue_repository_1.IssueRepository();
                 this.labels.currentLabels = await issueRepository.getLabels(this.owner, this.repo, this.number, this.tokens.token);
                 this.hotfix.active = await issueRepository.isHotfix(this.owner, this.repo, this.issue.number, this.labels.hotfix, this.tokens.token);
-                this.previousConfiguration = await issueRepository.readConfig(this.owner, this.repo, this.issue.number, this.tokens.token);
+                this.previousConfiguration = new description_utils_1.DescriptionUtils().readConfig(this.issue.body);
             }
             else if (this.isPullRequest) {
-                const pullRequestRepository = new pull_request_repository_1.PullRequestRepository();
+                const issueRepository = new issue_repository_1.IssueRepository();
                 this.number = (0, title_utils_1.extractIssueNumberFromBranch)(this.pullRequest.head);
-                this.labels.currentLabels = await pullRequestRepository.getLabels(this.owner, this.repo, this.pullRequest.number, this.tokens.token);
+                this.labels.currentLabels = await issueRepository.getLabels(this.owner, this.repo, this.pullRequest.number, this.tokens.token);
                 this.hotfix.active = this.pullRequest.base.indexOf(`${this.branches.hotfixTree}/`) > -1;
-                this.previousConfiguration = await pullRequestRepository.readConfig(this.owner, this.repo, this.pullRequest.number, this.tokens.token);
+                this.previousConfiguration = new description_utils_1.DescriptionUtils().readConfig(this.pullRequest.body);
             }
             else if (this.isPush) {
                 this.number = (0, title_utils_1.extractIssueNumberFromBranchB)(this.commit.branch);
-                const pullRequestRepository = new pull_request_repository_1.PullRequestRepository();
-                this.previousConfiguration = await pullRequestRepository.readConfig(this.owner, this.repo, this.number, this.tokens.token);
+                const issueRepository = new issue_repository_1.IssueRepository();
+                const issueDescription = await issueRepository.getDescription(this.owner, this.repo, this.number, this.tokens.token);
+                this.previousConfiguration = new description_utils_1.DescriptionUtils().readConfig(issueDescription);
             }
             this.currentConfiguration.branchType = this.issueType;
         };
@@ -30313,6 +30314,9 @@ class Issue {
     }
     get number() {
         return github.context.payload.issue?.number ?? -1;
+    }
+    get creator() {
+        return github.context.payload.issue?.user.login ?? '';
     }
     get url() {
         return github.context.payload.issue?.html_url ?? '';
@@ -30475,6 +30479,9 @@ class PullRequest {
     }
     get title() {
         return github.context.payload.pull_request?.title ?? '';
+    }
+    get creator() {
+        return github.context.payload.pull_request?.user.login ?? '';
     }
     get number() {
         return github.context.payload.pull_request?.number ?? -1;
@@ -30951,7 +30958,6 @@ exports.IssueRepository = void 0;
 const github = __importStar(__nccwpck_require__(5438));
 const core = __importStar(__nccwpck_require__(2186));
 const milestone_1 = __nccwpck_require__(2298);
-const config_1 = __nccwpck_require__(1106);
 class IssueRepository {
     constructor() {
         this.startConfigPattern = '<!-- GIT-BOARD-CONFIG-START';
@@ -31047,52 +31053,25 @@ class IssueRepository {
                 return undefined;
             }
         };
-        this.updateConfig = async (owner, repo, issueNumber, config, token) => {
+        this.updateDescription = async (owner, repo, issueNumber, description, token) => {
             const octokit = github.getOctokit(token);
             try {
-                const { data: issue } = await octokit.rest.issues.get({
-                    owner,
-                    repo,
-                    issue_number: issueNumber,
-                });
-                const currentDescription = issue.body || '';
-                const configBlock = `${this.startConfigPattern} 
-${JSON.stringify(config, null, 4)}
-${this.endConfigPattern}`;
-                if (currentDescription.indexOf(this.startConfigPattern) === -1
-                    && currentDescription.indexOf(this.endConfigPattern) === -1) {
-                    const finalDescription = `${currentDescription}\n\n${configBlock}`;
-                    await octokit.rest.issues.update({
-                        owner,
-                        repo,
-                        issue_number: issueNumber,
-                        body: finalDescription,
-                    });
-                    return;
-                }
-                if (currentDescription.indexOf(this.startConfigPattern) === -1
-                    || currentDescription.indexOf(this.endConfigPattern) === -1) {
-                    console.error(`Issue #${issueNumber} has a problem with open-close tags: ${this.startConfigPattern} / ${this.endConfigPattern}`);
-                    return;
-                }
-                const storedConfig = currentDescription.split(this.startConfigPattern)[1].split(this.endConfigPattern)[0];
-                const oldContent = `${this.startConfigPattern}${storedConfig}${this.endConfigPattern}`;
-                const updatedDescription = currentDescription.replace(oldContent, '');
-                const finalDescription = `${updatedDescription}\n\n${configBlock}`;
                 await octokit.rest.issues.update({
                     owner,
                     repo,
                     issue_number: issueNumber,
-                    body: finalDescription,
+                    body: description,
                 });
-                console.log(`Issue #${issueNumber} updated with branch configuration.`);
             }
             catch (error) {
                 console.error(`Error updating issue description: ${error}`);
                 throw error;
             }
         };
-        this.readConfig = async (owner, repo, issueNumber, token) => {
+        this.getDescription = async (owner, repo, issueNumber, token) => {
+            if (issueNumber === -1) {
+                return undefined;
+            }
             const octokit = github.getOctokit(token);
             try {
                 const { data: issue } = await octokit.rest.issues.get({
@@ -31100,17 +31079,11 @@ ${this.endConfigPattern}`;
                     repo,
                     issue_number: issueNumber,
                 });
-                const currentDescription = issue.body || '';
-                if (currentDescription.indexOf(this.startConfigPattern) === -1) {
-                    return undefined;
-                }
-                const config = currentDescription.split(this.startConfigPattern)[1].split(this.endConfigPattern)[0];
-                const branchConfig = JSON.parse(config);
-                return new config_1.Config(branchConfig);
+                return issue.body ?? '';
             }
             catch (error) {
-                core.error(`Error reading issue configuration: ${error}`);
-                throw error;
+                core.error(`Error reading pull request configuration: ${error}`);
+                return undefined;
             }
         };
         this.getId = async (owner, repository, issueNumber, token) => {
@@ -31477,6 +31450,31 @@ class ProjectRepository {
             }
             return [];
         };
+        this.getAllMembers = async (organization, token) => {
+            const octokit = github.getOctokit(token);
+            try {
+                const { data: teams } = await octokit.rest.teams.list({
+                    org: organization,
+                });
+                if (teams.length === 0) {
+                    core.info(`${organization} doesn't have any team.`);
+                    return [];
+                }
+                const membersSet = new Set();
+                for (const team of teams) {
+                    const { data: members } = await octokit.rest.teams.listMembersInOrg({
+                        org: organization,
+                        team_slug: team.slug,
+                    });
+                    members.forEach((member) => membersSet.add(member.login));
+                }
+                return Array.from(membersSet);
+            }
+            catch (error) {
+                core.error(`Error getting all members: ${error}.`);
+            }
+            return [];
+        };
     }
 }
 exports.ProjectRepository = ProjectRepository;
@@ -31526,7 +31524,6 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.PullRequestRepository = void 0;
 const github = __importStar(__nccwpck_require__(5438));
 const core = __importStar(__nccwpck_require__(2186));
-const config_1 = __nccwpck_require__(1106);
 class PullRequestRepository {
     constructor() {
         this.startConfigPattern = '<!-- GIT-BOARD-CONFIG-START';
@@ -31554,94 +31551,6 @@ class PullRequestRepository {
                 body: description,
             });
             core.info(`Updated PR #${pullRequestNumber} description with: ${description}`);
-        };
-        this.addComment = async (owner, repository, pullRequestNumber, comment, token) => {
-            const octokit = github.getOctokit(token);
-            await octokit.rest.issues.createComment({
-                owner: owner,
-                repo: repository,
-                issue_number: pullRequestNumber,
-                body: comment,
-            });
-            core.info(`Comment added to PR #${pullRequestNumber}: ${comment}`);
-        };
-        this.getLabels = async (owner, repository, pullRequestNumber, token) => {
-            const octokit = github.getOctokit(token);
-            const { data: labels } = await octokit.rest.issues.listLabelsOnIssue({
-                owner: owner,
-                repo: repository,
-                issue_number: pullRequestNumber,
-            });
-            return labels.map(label => label.name);
-        };
-        this.updateConfig = async (owner, repo, issueNumber, config, token) => {
-            const octokit = github.getOctokit(token);
-            try {
-                const { data: issue } = await octokit.rest.issues.get({
-                    owner,
-                    repo,
-                    issue_number: issueNumber,
-                });
-                const currentDescription = issue.body || '';
-                const configBlock = `${this.startConfigPattern} 
-${JSON.stringify(config, null, 4)}
-${this.endConfigPattern}`;
-                if (currentDescription.indexOf(this.startConfigPattern) === -1
-                    && currentDescription.indexOf(this.endConfigPattern) === -1) {
-                    const finalDescription = `${currentDescription}\n\n${configBlock}`;
-                    await octokit.rest.issues.update({
-                        owner,
-                        repo,
-                        issue_number: issueNumber,
-                        body: finalDescription,
-                    });
-                    return;
-                }
-                if (currentDescription.indexOf(this.startConfigPattern) === -1
-                    || currentDescription.indexOf(this.endConfigPattern) === -1) {
-                    console.error(`Pull request #${issueNumber} has a problem with open-close tags: ${this.startConfigPattern} / ${this.endConfigPattern}`);
-                    return;
-                }
-                const storedConfig = currentDescription.split(this.startConfigPattern)[1].split(this.endConfigPattern)[0];
-                const oldContent = `${this.startConfigPattern}${storedConfig}${this.endConfigPattern}`;
-                const updatedDescription = currentDescription.replace(oldContent, '');
-                const finalDescription = `${updatedDescription}\n\n${configBlock}`;
-                await octokit.rest.issues.update({
-                    owner,
-                    repo,
-                    issue_number: issueNumber,
-                    body: finalDescription,
-                });
-                console.log(`Pull request #${issueNumber} updated with branch configuration.`);
-            }
-            catch (error) {
-                console.error(`Error updating issue description: ${error}`);
-                throw error;
-            }
-        };
-        this.readConfig = async (owner, repo, issueNumber, token) => {
-            if (issueNumber === -1) {
-                return undefined;
-            }
-            const octokit = github.getOctokit(token);
-            try {
-                const { data: issue } = await octokit.rest.issues.get({
-                    owner,
-                    repo,
-                    issue_number: issueNumber,
-                });
-                const currentDescription = issue.body || '';
-                if (currentDescription.indexOf(this.startConfigPattern) === -1) {
-                    return undefined;
-                }
-                const config = currentDescription.split(this.startConfigPattern)[1].split(this.endConfigPattern)[0];
-                const branchConfig = JSON.parse(config);
-                return new config_1.Config(branchConfig);
-            }
-            catch (error) {
-                core.error(`Error reading pull request configuration: ${error}`);
-                throw error;
-            }
         };
         this.getCurrentReviewers = async (owner, repository, pullNumber, token) => {
             const octokit = github.getOctokit(token);
@@ -31955,7 +31864,6 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.PublishResultUseCase = void 0;
 const issue_repository_1 = __nccwpck_require__(57);
 const result_1 = __nccwpck_require__(7305);
-const pull_request_repository_1 = __nccwpck_require__(634);
 const list_utils_1 = __nccwpck_require__(834);
 const core = __importStar(__nccwpck_require__(2186));
 /**
@@ -31965,7 +31873,6 @@ class PublishResultUseCase {
     constructor() {
         this.taskId = 'PublishResultUseCase';
         this.issueRepository = new issue_repository_1.IssueRepository();
-        this.pullRequestRepository = new pull_request_repository_1.PullRequestRepository();
     }
     async invoke(param) {
         core.info(`Executing ${this.taskId}.`);
@@ -32040,7 +31947,7 @@ Thank you for contributing! 🙌
                 await this.issueRepository.addComment(param.owner, param.repo, param.issue.number, commentBody, param.tokens.token);
             }
             else if (param.isPullRequest) {
-                await this.pullRequestRepository.addComment(param.owner, param.repo, param.pullRequest.number, commentBody, param.tokens.token);
+                await this.issueRepository.addComment(param.owner, param.repo, param.pullRequest.number, commentBody, param.tokens.token);
             }
         }
         catch (error) {
@@ -32333,11 +32240,48 @@ class AssignMemberToIssueUseCase {
         const result = [];
         try {
             core.info(`#${number} needs ${desiredAssigneesCount} assignees.`);
+            const currentProjectMembers = await this.projectRepository.getAllMembers(param.owner, param.tokens.token);
             const currentMembers = await this.issueRepository.getCurrentAssignees(param.owner, param.repo, number, param.tokens.token);
-            if (currentMembers.length >= desiredAssigneesCount) {
-                /**
-                 * No more assignees needed
-                 */
+            let remainingAssignees = desiredAssigneesCount - currentMembers.length;
+            const pullRequestCreatorIsTeamMember = param.isPullRequest
+                && param.pullRequest.creator.length > 0
+                && currentProjectMembers.indexOf(param.pullRequest.creator) > -1
+                && !currentMembers.includes(param.pullRequest.creator);
+            const issueCreatorIsTeamMember = param.isIssue
+                && param.issue.creator.length > 0
+                && currentProjectMembers.indexOf(param.issue.creator) > -1
+                && !currentMembers.includes(param.issue.creator);
+            /**
+             * Assign PR creator if applicable
+             */
+            if (pullRequestCreatorIsTeamMember) {
+                const creator = param.pullRequest.creator;
+                await this.issueRepository.assignMembersToIssue(param.owner, param.repo, number, [creator], param.tokens.token);
+                core.info(`Assigned PR creator @${creator} to #${number}.`);
+                result.push(new result_1.Result({
+                    id: this.taskId,
+                    success: true,
+                    executed: true,
+                    steps: [`The pull request was assigned to @${creator} (creator).`],
+                }));
+                remainingAssignees--; // Reduce the count of required assignees
+            }
+            else if (issueCreatorIsTeamMember) {
+                const creator = param.issue.creator;
+                await this.issueRepository.assignMembersToIssue(param.owner, param.repo, number, [creator], param.tokens.token);
+                core.info(`Assigned Issue creator @${creator} to #${number}.`);
+                result.push(new result_1.Result({
+                    id: this.taskId,
+                    success: true,
+                    executed: true,
+                    steps: [`The issue was assigned to @${creator} (creator).`],
+                }));
+                remainingAssignees--; // Reduce the count of required assignees
+            }
+            /**
+             * Exit if no more assignees are needed
+             */
+            if (remainingAssignees <= 0) {
                 result.push(new result_1.Result({
                     id: this.taskId,
                     success: true,
@@ -32345,23 +32289,22 @@ class AssignMemberToIssueUseCase {
                 }));
                 return result;
             }
-            const missingAssignees = desiredAssigneesCount - currentMembers.length;
-            core.info(`#${number} needs ${missingAssignees} more assignees.`);
-            const members = await this.projectRepository.getRandomMembers(param.owner, missingAssignees, currentMembers, param.tokens.tokenPat);
+            /**
+             * Assign remaining members randomly
+             */
+            const members = await this.projectRepository.getRandomMembers(param.owner, remainingAssignees, currentMembers, param.tokens.tokenPat);
             if (members.length === 0) {
                 result.push(new result_1.Result({
                     id: this.taskId,
                     success: false,
                     executed: true,
-                    steps: [
-                        `Tried to assign members to issue, but no one was found.`,
-                    ],
+                    steps: [`Tried to assign members to issue, but no one was found.`],
                 }));
                 return result;
             }
             const membersAdded = await this.issueRepository.assignMembersToIssue(param.owner, param.repo, number, members, param.tokens.token);
             for (const member of membersAdded) {
-                if (members.indexOf(member) > -1)
+                if (members.includes(member)) {
                     result.push(new result_1.Result({
                         id: this.taskId,
                         success: true,
@@ -32370,6 +32313,7 @@ class AssignMemberToIssueUseCase {
                             param.isIssue ? `The issue was assigned to @${member}.` : `The pull request was assigned to @${member}.`,
                         ],
                     }));
+                }
             }
             return result;
         }
@@ -32379,9 +32323,7 @@ class AssignMemberToIssueUseCase {
                 id: this.taskId,
                 success: false,
                 executed: true,
-                steps: [
-                    `Tried to assign members to issue.`,
-                ],
+                steps: [`Tried to assign members to issue.`],
                 error: error,
             }));
         }
@@ -32468,6 +32410,7 @@ class AssignReviewersToIssueUseCase {
             const missingReviewers = desiredReviewersCount - currentReviewers.length;
             core.info(`#${number} needs ${missingReviewers} more reviewers.`);
             const excludeForReview = [];
+            excludeForReview.push(param.pullRequest.creator);
             excludeForReview.push(...currentReviewers);
             excludeForReview.push(...currentAssignees);
             const members = await this.projectRepository.getRandomMembers(param.owner, missingReviewers, excludeForReview, param.tokens.tokenPat);
@@ -32482,8 +32425,8 @@ class AssignReviewersToIssueUseCase {
                 }));
                 return result;
             }
-            const membersAdded = await this.pullRequestRepository.addReviewersToPullRequest(param.owner, param.repo, number, members, param.tokens.token);
-            for (const member of membersAdded) {
+            const reviewersAdded = await this.pullRequestRepository.addReviewersToPullRequest(param.owner, param.repo, number, members, param.tokens.token);
+            for (const member of reviewersAdded) {
                 if (members.indexOf(member) > -1)
                     result.push(new result_1.Result({
                         id: this.taskId,
@@ -32881,7 +32824,7 @@ class LinkPullRequestIssueUseCase {
                 /**
                  *  Update PR's description.
                  */
-                let prBody = github.context.payload.pull_request?.body || '';
+                let prBody = param.pullRequest.body;
                 let updatedBody = `${prBody}\n\nResolves #${param.number}`;
                 await this.pullRequestRepository.updateDescription(param.owner, param.repo, param.pullRequest.number, updatedBody, param.tokens.token);
                 result.push(new result_1.Result({
@@ -32911,7 +32854,7 @@ class LinkPullRequestIssueUseCase {
                 /**
                  * Restore comment on description
                  */
-                prBody = github.context.payload.pull_request?.body ?? "";
+                prBody = param.pullRequest.body;
                 updatedBody = prBody.replace(`\n\nResolves #${param.number}`, "");
                 await this.pullRequestRepository.updateDescription(param.owner, param.repo, param.pullRequest.number, updatedBody, param.tokens.token);
                 result.push(new result_1.Result({
@@ -33542,8 +33485,8 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.StoreConfigurationUseCase = void 0;
 const issue_repository_1 = __nccwpck_require__(57);
-const pull_request_repository_1 = __nccwpck_require__(634);
 const core = __importStar(__nccwpck_require__(2186));
+const description_utils_1 = __nccwpck_require__(5574);
 /**
  * Store las configuration in the description
  */
@@ -33551,16 +33494,23 @@ class StoreConfigurationUseCase {
     constructor() {
         this.taskId = 'StoreConfigurationUseCase';
         this.issueRepository = new issue_repository_1.IssueRepository();
-        this.pullRequestRepository = new pull_request_repository_1.PullRequestRepository();
     }
     async invoke(param) {
         core.info(`Executing ${this.taskId}.`);
         try {
             if (param.isIssue) {
-                await this.issueRepository.updateConfig(param.owner, param.repo, param.issue.number, param.currentConfiguration, param.tokens.token);
+                const description = new description_utils_1.DescriptionUtils().updateConfig(param.issue.body, param.currentConfiguration);
+                if (description === undefined) {
+                    return;
+                }
+                await this.issueRepository.updateDescription(param.owner, param.repo, param.issue.number, description, param.tokens.token);
             }
             else if (param.isPullRequest) {
-                await this.pullRequestRepository.updateConfig(param.owner, param.repo, param.pullRequest.number, param.currentConfiguration, param.tokens.token);
+                const description = new description_utils_1.DescriptionUtils().updateConfig(param.pullRequest.body, param.currentConfiguration);
+                if (description === undefined) {
+                    return;
+                }
+                await this.issueRepository.updateDescription(param.owner, param.repo, param.pullRequest.number, description, param.tokens.token);
             }
         }
         catch (error) {
@@ -33569,6 +33519,107 @@ class StoreConfigurationUseCase {
     }
 }
 exports.StoreConfigurationUseCase = StoreConfigurationUseCase;
+
+
+/***/ }),
+
+/***/ 5574:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.DescriptionUtils = void 0;
+const config_1 = __nccwpck_require__(1106);
+const core = __importStar(__nccwpck_require__(2186));
+class DescriptionUtils {
+    constructor() {
+        this.updateConfig = (content, config) => {
+            try {
+                const configBlock = `${this.startJsonConfigPattern} 
+${JSON.stringify(config, null, 4)}
+${this.endJsonConfigPattern}`;
+                if (content.indexOf(this.startJsonConfigPattern) === -1
+                    && content.indexOf(this.endJsonConfigPattern) === -1) {
+                    return `${content}\n\n${configBlock}`;
+                }
+                if (content.indexOf(this.startJsonConfigPattern) === -1
+                    || content.indexOf(this.endJsonConfigPattern) === -1) {
+                    console.error(`The content has a problem with open-close tags: ${this.startJsonConfigPattern} / ${this.endJsonConfigPattern}`);
+                    return undefined;
+                }
+                const storedConfig = content.split(this.startJsonConfigPattern)[1].split(this.endJsonConfigPattern)[0];
+                const oldContent = `${this.startJsonConfigPattern}${storedConfig}${this.endJsonConfigPattern}`;
+                const updatedDescription = content.replace(oldContent, '');
+                return `${updatedDescription}\n\n${configBlock}`;
+            }
+            catch (error) {
+                console.error(`Error updating issue description: ${error}`);
+                return undefined;
+            }
+        };
+        this.readConfig = (content) => {
+            try {
+                if (content === undefined) {
+                    return undefined;
+                }
+                if (content.indexOf(this.startJsonConfigPattern) === -1 || content.indexOf(this.endJsonConfigPattern) === -1) {
+                    return undefined;
+                }
+                const config = content.split(this.startJsonConfigPattern)[1].split(this.endJsonConfigPattern)[0];
+                const branchConfig = JSON.parse(config);
+                return new config_1.Config(branchConfig);
+            }
+            catch (error) {
+                core.error(`Error reading issue configuration: ${error}`);
+                throw error;
+            }
+        };
+    }
+    get id() {
+        return 'git-board-flow';
+    }
+    get startJsonConfigPattern() {
+        return `<!-- ${this.id}-json-start`;
+    }
+    get endJsonConfigPattern() {
+        return `${this.id}-json-end -->`;
+    }
+}
+exports.DescriptionUtils = DescriptionUtils;
 
 
 /***/ }),

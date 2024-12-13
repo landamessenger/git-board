@@ -1,0 +1,67 @@
+name: 🔥 Hotfix Issue
+
+description: Request a new hotfix for git-board-flow (only team members)
+title: "<YOUR TITLE HERE>"
+labels: ["hotfix"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### ⚠️ Disclaimer
+        > **Only members of the git-board-flow team can create hotfix issues.**
+        > Any hotfix issue created by someone outside the team will be closed automatically.
+
+        ---
+
+  - type: input
+    id: hotfix_version
+    attributes:
+      label: Hotfix Version
+      description: |
+        Specify the version number for the hotfix (e.g., 1.2.3-hotfix1).
+      placeholder: "e.g., 1.2.3-hotfix1"
+    validations:
+      required: true
+
+  - type: textarea
+    id: issue_description
+    attributes:
+      label: Issue Description
+      description: |
+        Provide a detailed description of the issue this hotfix is addressing.
+      placeholder: "Describe the issue being fixed."
+    validations:
+      required: true
+
+  - type: textarea
+    id: hotfix_solution
+    attributes:
+      label: Hotfix Solution
+      description: |
+        Explain the solution being implemented in this hotfix.
+      placeholder: "Describe the solution."
+    validations:
+      required: true
+
+  - type: textarea
+    id: checklist
+    attributes:
+      label: Pre-Hotfix Checklist
+      description: |
+        List any pre-hotfix tasks or checks that need to be completed before applying the hotfix.
+      placeholder: |
+        Example:
+        - [ ] Validate the fix on staging
+        - [ ] Update relevant documentation
+        - [ ] Notify stakeholders
+      render: task-list
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional Context
+      description: |
+        Add any additional details or context about this hotfix request.
+      placeholder: "Anything else to note?"

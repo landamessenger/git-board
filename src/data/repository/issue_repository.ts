@@ -3,6 +3,7 @@ import * as core from "@actions/core";
 import {Milestone} from "../model/milestone";
 import {Config} from "../model/config";
 import {Labels} from "../model/labels";
+import {DescriptionUtils} from "../utils/description_utils";
 
 export class IssueRepository {
     private startConfigPattern = '<!-- GIT-BOARD-CONFIG-START'
@@ -118,99 +119,49 @@ export class IssueRepository {
     };
 
 
-    updateConfig = async (
+    updateDescription = async (
         owner: string,
         repo: string,
         issueNumber: number,
-        config: Config,
+        description: string,
         token: string
     ) => {
         const octokit = github.getOctokit(token);
-
         try {
-            const {data: issue} = await octokit.rest.issues.get({
-                owner,
-                repo,
-                issue_number: issueNumber,
-            });
-
-            const currentDescription = issue.body || '';
-
-            const configBlock = `${this.startConfigPattern} 
-${JSON.stringify(config, null, 4)}
-${this.endConfigPattern}`;
-
-            if (currentDescription.indexOf(this.startConfigPattern) === -1
-                && currentDescription.indexOf(this.endConfigPattern) === -1) {
-                const finalDescription = `${currentDescription}\n\n${configBlock}`;
-
-                await octokit.rest.issues.update({
-                    owner,
-                    repo,
-                    issue_number: issueNumber,
-                    body: finalDescription,
-                });
-                return;
-            }
-
-            if (currentDescription.indexOf(this.startConfigPattern) === -1
-                || currentDescription.indexOf(this.endConfigPattern) === -1) {
-                console.error(`Issue #${issueNumber} has a problem with open-close tags: ${this.startConfigPattern} / ${this.endConfigPattern}`);
-                return;
-            }
-
-            const storedConfig = currentDescription.split(this.startConfigPattern)[1].split(this.endConfigPattern)[0]
-            const oldContent = `${this.startConfigPattern}${storedConfig}${this.endConfigPattern}`
-            const updatedDescription = currentDescription.replace(oldContent, '')
-
-            const finalDescription = `${updatedDescription}\n\n${configBlock}`;
-
             await octokit.rest.issues.update({
                 owner,
                 repo,
                 issue_number: issueNumber,
-                body: finalDescription,
+                body: description,
             });
-
-            console.log(`Issue #${issueNumber} updated with branch configuration.`);
         } catch (error) {
             console.error(`Error updating issue description: ${error}`);
             throw error;
         }
     }
 
-    readConfig = async (
+    getDescription = async (
         owner: string,
         repo: string,
         issueNumber: number,
         token: string
-    ): Promise<Config | undefined> => {
+    ): Promise<string | undefined> => {
+        if (issueNumber === -1) {
+            return undefined;
+        }
         const octokit = github.getOctokit(token);
-
         try {
             const {data: issue} = await octokit.rest.issues.get({
                 owner,
                 repo,
                 issue_number: issueNumber,
             });
-
-            const currentDescription = issue.body || '';
-
-            if (currentDescription.indexOf(this.startConfigPattern) === -1) {
-                return undefined;
-            }
-
-            const config = currentDescription.split(this.startConfigPattern)[1].split(this.endConfigPattern)[0]
-
-            const branchConfig = JSON.parse(config);
-
-            return new Config(branchConfig);
+            return issue.body ?? '';
         } catch (error) {
-            core.error(`Error reading issue configuration: ${error}`);
-            throw error;
+            core.error(`Error reading pull request configuration: ${error}`);
+            return undefined
         }
     }
-
 
     getId = async (
         owner: string,
@@ -459,7 +410,7 @@ ${this.endConfigPattern}`;
                 return [];
             }
 
-            const { data: updatedIssue } = await octokit.rest.issues.addAssignees({
+            const {data: updatedIssue} = await octokit.rest.issues.addAssignees({
                 owner,
                 repo: repository,
                 issue_number: issueNumber,
@@ -473,7 +424,6 @@ ${this.endConfigPattern}`;
             return [];
         }
     };
-
 
 
 }

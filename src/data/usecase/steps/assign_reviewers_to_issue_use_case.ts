@@ -56,6 +56,7 @@ export class AssignReviewersToIssueUseCase implements ParamUseCase<Execution, Re
 
 
             const excludeForReview: string[] = []
+            excludeForReview.push(param.pullRequest.creator)
             excludeForReview.push(...currentReviewers)
             excludeForReview.push(...currentAssignees)
 
@@ -80,7 +81,7 @@ export class AssignReviewersToIssueUseCase implements ParamUseCase<Execution, Re
                 return result
             }
 
-            const membersAdded = await this.pullRequestRepository.addReviewersToPullRequest(
+            const reviewersAdded = await this.pullRequestRepository.addReviewersToPullRequest(
                 param.owner,
                 param.repo,
                 number,
@@ -88,7 +89,7 @@ export class AssignReviewersToIssueUseCase implements ParamUseCase<Execution, Re
                 param.tokens.token,
             )
 
-            for (const member of membersAdded) {
+            for (const member of reviewersAdded) {
                 if (members.indexOf(member) > -1)
                     result.push(
                         new Result({
